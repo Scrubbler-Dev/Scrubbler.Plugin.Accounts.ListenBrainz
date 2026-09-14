@@ -50,11 +50,3 @@ The release workflow uses the existing Scrubbler-Plugins reusable publisher. Con
 `SCRUBBLER_PLUGINS_PAT` in the new repository before publishing a release. No embedded API keys,
 client secrets, or `PluginDefaults` injection are needed. The workflow builds, tests, and publishes
 the plugin ZIP and icon to the plugin catalog.
-
-## Attribution
-
-The plugin follows the existing Scrubbler account plugin's GPL-3.0 license; see `LICENSE`.
-The ListenBrainz icon is the upstream
-[favicon-256.png](https://github.com/metabrainz/listenbrainz-server/blob/master/frontend/img/favicon-256.png),
-used to identify the service. ListenBrainz branding belongs to MetaBrainz.
-MetaBrainz.ListenBrainz is MIT licensed; see `THIRD-PARTY-NOTICES.md`.
