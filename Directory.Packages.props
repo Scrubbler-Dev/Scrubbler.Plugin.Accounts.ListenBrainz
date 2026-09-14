@@ -1,0 +1,7 @@
+<Project>
+  <Import Project="deps/Directory.Packages.props" />
+  <ItemGroup>
+    <PackageVersion Include="Scrubbler.PluginBase" Version="1.2.1" />
+    <PackageVersion Include="MetaBrainz.ListenBrainz" Version="6.0.0" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+name: Publish plugin to Scrubbler-Plugins repository
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    uses: Scrubbler-Dev/Scrubbler-Plugins/.github/workflows/publish-plugin-reusable.yml@main
+    with:
+      plugin_name: Scrubbler.Plugin.Accounts.ListenBrainz
+      tfm: net10.0
+    secrets:
+      SCRUBBLER_PLUGINS_PAT: ${{ secrets.SCRUBBLER_PLUGINS_PAT }}

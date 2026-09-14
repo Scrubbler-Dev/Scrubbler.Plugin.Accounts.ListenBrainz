@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Scrubbler.Plugin.Accounts.ListenBrainz/Scrubbler.Plugin.Accounts.ListenBrainz.csproj" />
+  <Project Path="Scrubbler.Test.ListenBrainzTest/Scrubbler.Test.ListenBrainzTest.csproj" />
+</Solution>
