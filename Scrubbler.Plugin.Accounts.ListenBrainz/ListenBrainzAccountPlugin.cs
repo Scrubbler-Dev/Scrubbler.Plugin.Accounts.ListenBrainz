@@ -14,7 +14,8 @@ using ListenBrainzClient = MetaBrainz.ListenBrainz.ListenBrainz;
 namespace Scrubbler.Plugin.Accounts.ListenBrainz;
 
 [PluginMetadata(Name = "ListenBrainz", Description = "Scrobble to a ListenBrainz account", SupportedPlatforms = PlatformSupport.All)]
-public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IAccountPlugin, IDisposable
+public sealed partial class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IAccountPlugin, IDisposable,
+    ICanUpdateNowPlaying, ICanLoveTracks, ICanFetchPlayCounts, ICanFetchTags, ICanOpenLinks
 {
     private const string CredentialsKey = "ListenBrainzCredentials";
     private readonly ListenBrainzClient _client;
@@ -48,17 +49,20 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
                 "https://github.com/Scrubbler-Dev"),
             new FileSecureStore(Path.Combine(SettingsDirectory, "settings.dat"), "ListenBrainz"),
             new JsonSettingsStore(Path.Combine(SettingsDirectory, "settings.json")),
-            new TokenLoginDialog(dialogs, linkOpener).ShowAsync)
+            new TokenLoginDialog(dialogs, linkOpener).ShowAsync, linkOpener: linkOpener)
     { }
 
     internal ListenBrainzAccountPlugin(IModuleLogServiceFactory logFactory, ListenBrainzClient client,
-        ISecureStore secureStore, ISettingsStore settingsStore, Func<Func<string, Task<string?>>, Task> showLoginDialog)
+        ISecureStore secureStore, ISettingsStore settingsStore, Func<Func<string, Task<string?>>, Task> showLoginDialog,
+        ListenBrainzMetadataApi? metadataApi = null, ILinkOpenerService? linkOpener = null)
         : base(logFactory)
     {
         _client = client;
         _secureStore = secureStore;
         _settingsStore = settingsStore;
         _showLoginDialog = showLoginDialog;
+        _metadataApi = metadataApi ?? new ListenBrainzMetadataApi(Version);
+        _linkOpener = linkOpener;
     }
 
     public async Task LoadAsync()
@@ -69,6 +73,7 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
             _settings = await _settingsStore.GetOrCreateAsync<PluginSettings>(Name);
             AccountId = null;
             _client.UserToken = null;
+            ClearAccountFunctionCaches();
             var json = await _secureStore.GetAsync(CredentialsKey);
             Credentials? credentials;
             try { credentials = json == null ? null : JsonSerializer.Deserialize<Credentials>(json); }
@@ -120,6 +125,7 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
             await _secureStore.SaveAsync(CredentialsKey, JsonSerializer.Serialize(new Credentials(validation.User, token)));
             _client.UserToken = token;
             AccountId = validation.User;
+            ClearAccountFunctionCaches();
             _logService.Info("Connected to ListenBrainz.");
             return null;
         }
@@ -140,6 +146,7 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
         {
             _client.UserToken = null;
             AccountId = null;
+            ClearAccountFunctionCaches();
             _gate.Release();
         }
     }
@@ -161,6 +168,7 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
                 // Scrubbler's inputs can be historical, even when there is only one track.
                 await _client.ImportListensAsync(batch);
                 accepted += batch.Length;
+                _statistics.Clear();
                 _logService.Info($"Submitted {accepted} / {listens.Length} listens to ListenBrainz.");
             }
             return new(true, null);
@@ -199,7 +207,8 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
 
     private async Task WaitForRateLimitAsync()
     {
-        var rate = _client.RateLimitInfo;
+        var rate = _metadataApi.RateLimitInfo.LastRequest > _client.RateLimitInfo.LastRequest
+            ? _metadataApi.RateLimitInfo : _client.RateLimitInfo;
         if (rate.RemainingRequests != 0) return;
         var reset = rate.ResetIn is int seconds ? rate.LastRequest.AddSeconds(seconds) : rate.ResetAt;
         if (reset is not null)
@@ -211,6 +220,7 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
 
     private static string DescribeError(Exception ex) => ex switch
     {
+        AccountFunctionException error => error.Message,
         HttpError { Status: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden } =>
             "ListenBrainz rejected the token. Log out and reconnect with a valid user token.",
         HttpError { Status: HttpStatusCode.TooManyRequests } =>
@@ -230,6 +240,7 @@ public sealed class ListenBrainzAccountPlugin : PluginBase.Plugin.PluginBase, IA
     public void Dispose()
     {
         _client.Dispose();
+        _metadataApi.Dispose();
         _gate.Dispose();
     }
 }

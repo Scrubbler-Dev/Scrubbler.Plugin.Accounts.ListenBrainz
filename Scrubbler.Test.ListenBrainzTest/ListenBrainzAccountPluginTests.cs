@@ -10,7 +10,7 @@ using ListenBrainzClient = MetaBrainz.ListenBrainz.ListenBrainz;
 
 namespace Scrubbler.Test.ListenBrainzTest;
 
-public sealed class ListenBrainzAccountPluginTests
+public sealed partial class ListenBrainzAccountPluginTests
 {
     private const string Token = "11111111-2222-3333-4444-555555555555";
     private string _directory = null!;
@@ -34,7 +34,8 @@ public sealed class ListenBrainzAccountPluginTests
     }
 
     private ListenBrainzAccountPlugin Create(RecordingHandler handler,
-        Func<Func<string, Task<string?>>, Task>? showDialog = null, ISecureStore? secureStore = null)
+        Func<Func<string, Task<string?>>, Task>? showDialog = null, ISecureStore? secureStore = null,
+        ILinkOpenerService? linkOpener = null)
     {
         var factory = new Mock<IModuleLogServiceFactory>();
         factory.Setup(f => f.Create(It.IsAny<string>())).Returns(_log.Object);
@@ -42,7 +43,8 @@ public sealed class ListenBrainzAccountPluginTests
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Scrubbler/1.0 (+https://github.com/Scrubbler-Dev)");
         var plugin = new ListenBrainzAccountPlugin(factory.Object, new ListenBrainzClient(http, true),
             secureStore ?? new FileSecureStore(Path.Combine(_directory, "settings.dat"), "ListenBrainz"),
-            new JsonSettingsStore(Path.Combine(_directory, "settings.json")), showDialog ?? (_ => Task.CompletedTask));
+            new JsonSettingsStore(Path.Combine(_directory, "settings.json")), showDialog ?? (_ => Task.CompletedTask),
+            new ListenBrainzMetadataApi(http), linkOpener);
         _plugins.Add(plugin);
         return plugin;
     }
@@ -308,6 +310,7 @@ public sealed class ListenBrainzAccountPluginTests
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public List<Request> Requests { get; } = [];
+        public Func<Request, HttpResponseMessage>? Respond { get; init; }
         public string ValidationJson { get; set; } = "{\"code\":200,\"message\":\"Token valid.\",\"valid\":true,\"user_name\":\"listener\"}";
         public int FailSubmission { get; init; }
         public HttpStatusCode FailureStatus { get; init; }
@@ -322,6 +325,12 @@ public sealed class ListenBrainzAccountPluginTests
                 request.Headers.UserAgent.ToString(), request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken)));
             if (NetworkFailure) throw new HttpRequestException("Sensitive request: " + Token);
             var validation = request.RequestUri!.AbsolutePath.EndsWith("validate-token");
+            if (!validation && Respond != null)
+            {
+                var customResponse = Respond(Requests.Last());
+                customResponse.RequestMessage = request;
+                return customResponse;
+            }
             if (!validation) SubmissionTimes.Add(DateTimeOffset.UtcNow);
             var failed = !validation && ++_submissions == FailSubmission;
             var response = new HttpResponseMessage(failed ? FailureStatus : HttpStatusCode.OK)
